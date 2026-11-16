@@ -226,9 +226,11 @@ class App:
         return networks
 
     def condition_values(self):
+        # 列表才是已生效条件；上方输入框只是添加 / 更新条件时使用的编辑器。
         return [tuple(self.conditions.item(item, "values")) for item in self.conditions.get_children()]
 
     def invalidate_ranges(self):
+        # 条件变化后立即清空旧结果，避免复制或查看已经过期的 ACL。
         for index, item in enumerate(self.conditions.get_children(), 1):
             self.conditions.item(item, text=f"条件 {index}")
         self.range_tree.delete(*self.range_tree.get_children())

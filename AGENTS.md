@@ -2,7 +2,7 @@
 
 ## Version updates and GitHub synchronization
 
-The user requires automatic GitHub synchronization whenever a new client version is produced. Do not ask again for permission to synchronize routine project updates to the existing private repository `angel20009123/mask_s`.
+The user requires automatic GitHub synchronization whenever a new client version is produced. Do not ask again for permission to synchronize routine project updates to `angel20009123/mask_s`.
 
 For each functional update:
 
@@ -13,4 +13,4 @@ For each functional update:
 5. Check the workflow and confirm the release contains the versioned EXE. If a build or publication fails, investigate and fix it; report any concrete unresolved blocker. Do not claim a release is available before verifying its attachment.
 6. Provide the local versioned executable link and verified GitHub release link in the final reply.
 
-Keep the repository private. Keep build outputs out of Git; deliver EXEs through Releases. Documentation-only changes do not need a new application version or tag, but still need to be committed and pushed.
+The user explicitly requested that the repository be public. Preserve public visibility unless the user requests another change. Keep build outputs out of Git; deliver EXEs through Releases. Documentation-only changes do not need a new application version or tag, but still need to be committed and pushed.

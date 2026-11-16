@@ -16,6 +16,7 @@ def dotted(value):
 
 
 def calculate(address, value, mode="CIDR 前缀"):
+    """返回展示结果、规范化匹配地址及固定位掩码；不枚举网段中的主机。"""
     address_int = ipv4(address)
     if mode == "CIDR 前缀":
         try:
@@ -35,6 +36,7 @@ def calculate(address, value, mode="CIDR 前缀"):
         wildcard = ipv4(value)
         mask = wildcard ^ MAX
 
+    # 只有低位连续为 1 的通配符才对应一个 CIDR；非连续通配符也可用于 ACL。
     contiguous = wildcard & (wildcard + 1) == 0
     base = address_int & mask
     last = base | wildcard
@@ -60,6 +62,7 @@ def calculate(address, value, mode="CIDR 前缀"):
 
 
 def matches(candidate, base, mask):
+    # 通配符为 0 的位必须一致；base 已由原地址 & mask 规范化。
     return ipv4(candidate) & mask == base
 
 
@@ -67,12 +70,14 @@ def subnet_page(base, mask, offset=0, limit=128):
     """Minimal exact CIDR cover, paginated without enumerating all addresses."""
     wildcard = mask ^ MAX
     trailing = 0
+    # 末尾连续自由位组成每个 CIDR 块，其余自由位分别选择不同分支。
     while trailing < 32 and wildcard & (1 << trailing):
         trailing += 1
     branches = [bit for bit in range(trailing, 32) if wildcard & (1 << bit)]
     total = 1 << len(branches)
     networks = []
     for index in range(offset, min(offset + limit, total)):
+        # 按页号直接定位分支组合，避免极端通配符一次生成数十亿个子网。
         network = base
         for digit, bit in enumerate(branches):
             if index & (1 << digit):
@@ -91,7 +96,10 @@ def range_rules(start, end):
 
 
 def multiple_range_rules(ranges):
-    """Union of inclusive range conditions, with overlaps and adjacency merged."""
+    """返回闭区间条件并集的最少 CIDR 覆盖及合并区间，条件之间为或关系。
+
+    不填补不连续范围之间的空隙；不执行非连续通配符的最少规则优化。
+    """
     intervals = []
     for index, (start, end) in enumerate(ranges, 1):
         try:
@@ -104,6 +112,7 @@ def multiple_range_rules(ranges):
     if not intervals:
         raise ValueError("请至少添加一条地址范围条件")
     merged = []
+    # 排序后合并重叠、包含或相邻区间，避免地址数重复统计。
     for first, last in sorted(intervals):
         if merged and first <= merged[-1][1] + 1:
             merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
@@ -111,6 +120,7 @@ def multiple_range_rules(ranges):
             merged.append((first, last))
     networks = []
     for first, last in merged:
+        # 每个区间单独拆分，确保区间间隙内的地址不会被误匹配。
         networks.extend(ipaddress.summarize_address_range(
             ipaddress.IPv4Address(first), ipaddress.IPv4Address(last)))
     return networks, merged
