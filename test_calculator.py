@@ -1,8 +1,34 @@
 import unittest
-from calculator import calculate, matches, subnet_page, range_rules
+from calculator import calculate, matches, subnet_page, range_rules, multiple_range_rules
 
 
 class CalculatorTests(unittest.TestCase):
+    def test_multiple_ranges_keep_gaps(self):
+        networks, intervals = multiple_range_rules([("192.168.1.0", "192.168.1.255"), ("192.168.3.0", "192.168.3.255")])
+        self.assertEqual([str(n) for n in networks], ["192.168.1.0/24", "192.168.3.0/24"])
+        self.assertEqual(len(intervals), 2)
+
+    def test_multiple_ranges_merge_overlap_duplicates_and_adjacency(self):
+        networks, intervals = multiple_range_rules([("10.0.0.128", "10.0.0.255"), ("10.0.0.0", "10.0.0.127"), ("10.0.0.50", "10.0.0.180"), ("10.0.0.0", "10.0.0.127")])
+        self.assertEqual([str(n) for n in networks], ["10.0.0.0/24"])
+        self.assertEqual(len(intervals), 1)
+        self.assertEqual(sum(n.num_addresses for n in networks), 256)
+
+    def test_multiple_ranges_reject_empty_and_identify_invalid_condition(self):
+        with self.assertRaisesRegex(ValueError, "至少添加"):
+            multiple_range_rules([])
+        with self.assertRaisesRegex(ValueError, "条件 2"):
+            multiple_range_rules([("10.0.0.1", "10.0.0.1"), ("bad", "10.0.0.2")])
+
+    def test_multiple_ranges_exact_union(self):
+        import random
+        randomizer = random.Random(42)
+        for _ in range(100):
+            ranges = [sorted(randomizer.sample(range(256), 2)) for _ in range(8)]
+            expected = {0x0A000000 + value for start, end in ranges for value in range(start, end + 1)}
+            networks, _ = multiple_range_rules([(f"10.0.0.{start}", f"10.0.0.{end}") for start, end in ranges])
+            self.assertEqual({int(ip) for n in networks for ip in n}, expected)
+
     def test_aligned_range(self):
         rules = range_rules("192.168.1.0", "192.168.1.255")
         self.assertEqual([str(n) for n in rules], ["192.168.1.0/24"])

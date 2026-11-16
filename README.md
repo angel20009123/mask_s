@@ -1,18 +1,18 @@
 # Mask Studio
 
-当前版本：**v1.1.0**。更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：**v1.2.0**。更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 中文 IPv4 掩码与 ACL 桌面计算器，使用 Python 标准库 Tkinter，无第三方依赖。
 
 ## 启动
 
-从 GitHub Releases 下载 `MaskStudio-v1.1.0.exe`，或双击本地 `dist/MaskStudio-v1.1.0.exe`，无需安装 Python。
+从 GitHub Releases 下载 `MaskStudio-v1.2.0.exe`，或双击本地 `dist/MaskStudio-v1.2.0.exe`，无需安装 Python。
 
 运行源码：Windows 安装包含 Tkinter 的 Python 3.10 或更高版本后，双击 `启动客户端.bat`，或运行 `python app.py`。
 
 ## 功能
 
-- “地址范围反推”：输入起止 IPv4 地址（包含首尾），精确计算 CIDR 子网、正掩码、反掩码 / ACL 通配符。不能用单条规则精确表示的范围自动拆成多条规则；支持范围匹配检查及复制全部规则。
+- “地址范围反推”：输入起止 IPv4 地址（包含首尾），点击“添加条件”，可添加多条范围，按“或”关系匹配。选中一条可编辑后更新，Ctrl / Shift 可多选删除；点击“反推全部条件”生成精确 CIDR、正掩码、反掩码 / ACL 通配符。重叠、重复及相邻范围会合并去重，不匹配条件之外的地址。地址检查显示命中条件编号，复制结果包含全部条件及规则。输入框为条件编辑器，计算以已添加列表为准。
 
 - 输入 IPv4 地址以及 CIDR 前缀、正掩码或反掩码 / ACL 通配符。
 - 显示掩码互转、二进制表示、网络地址、广播地址、可用地址范围和数量。

@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 import sys
-from calculator import calculate, matches, subnet_page, range_rules, ipv4
+from calculator import calculate, matches, subnet_page, multiple_range_rules, ipv4
 from version import __version__
 
 
@@ -152,14 +152,35 @@ class App:
         self.notebook.add(panel, text="  地址范围反推  ")
         self.range_start = tk.StringVar(value="192.168.1.10")
         self.range_end = tk.StringVar(value="192.168.1.100")
-        ttk.Label(panel, text="输入起止地址（包含首尾），反推精确匹配的掩码与 ACL 通配符。", style="Sub.TLabel").pack(anchor="w", pady=(0, 10))
+        ttk.Label(panel, text="多条范围条件按“或”匹配：满足任意一条即匹配。只计算已添加的条件，所有范围包含首尾。", style="Sub.TLabel", wraplength=850).pack(anchor="w", pady=(0, 10))
         inputs = ttk.Frame(panel)
         inputs.pack(fill="x")
         for col, (label, variable) in enumerate((("起始 IPv4 地址", self.range_start), ("结束 IPv4 地址", self.range_end))):
             inputs.columnconfigure(col, weight=1)
             ttk.Label(inputs, text=label).grid(row=0, column=col, sticky="w", pady=(0, 6))
             ttk.Entry(inputs, textvariable=variable, font=("Consolas", 12)).grid(row=1, column=col, sticky="ew", padx=(0, 10), ipady=5)
-        ttk.Button(inputs, text="反推通配符", style="Accent.TButton", command=self.run_range).grid(row=1, column=2)
+        ttk.Button(inputs, text="添加条件", command=self.add_condition).grid(row=1, column=2)
+        condition_box = ttk.Frame(panel)
+        condition_box.pack(fill="x", pady=(10, 0))
+        self.conditions = ttk.Treeview(condition_box, columns=("start", "end"), show="tree headings", height=3, selectmode="extended")
+        self.conditions.heading("#0", text="条件", anchor="w")
+        self.conditions.column("#0", width=80, minwidth=80, stretch=False)
+        self.conditions.heading("start", text="已添加条件 · 起始地址", anchor="w")
+        self.conditions.heading("end", text="结束地址（满足任意一条）", anchor="w")
+        self.conditions.column("start", width=330)
+        self.conditions.column("end", width=330)
+        condition_scroll = ttk.Scrollbar(condition_box, orient="vertical", command=self.conditions.yview)
+        self.conditions.configure(yscrollcommand=condition_scroll.set)
+        condition_scroll.pack(side="right", fill="y")
+        self.conditions.pack(fill="x", expand=True)
+        self.conditions.tag_configure("condition", background="#eee8fb", foreground="#63408d")
+        self.conditions.insert("", "end", text="条件 1", values=(self.range_start.get(), self.range_end.get()), tags=("condition",))
+        self.conditions.bind("<<TreeviewSelect>>", self.load_condition)
+        condition_actions = ttk.Frame(panel)
+        condition_actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(condition_actions, text="更新选中条件", command=self.update_condition).pack(side="left")
+        ttk.Button(condition_actions, text="删除选中条件", command=self.remove_conditions).pack(side="left", padx=8)
+        ttk.Button(condition_actions, text="反推全部条件", style="Accent.TButton", command=self.run_range).pack(side="right")
         self.range_summary = tk.StringVar(value="点击“反推通配符”查看精确规则。")
         ttk.Label(panel, textvariable=self.range_summary, wraplength=850).pack(anchor="w", pady=12)
         table = ttk.Frame(panel)
@@ -184,7 +205,7 @@ class App:
         is_range = self.notebook.index(self.notebook.select()) == 2
         if is_range:
             self.bits.pack_forget()
-            self.status.set("范围反推模式 · 在下方输入起始和结束地址；底部可检查地址是否落在范围内。")
+            self.status.set("范围反推模式 · 可添加多条范围条件，按任意条件匹配；底部可检查地址。")
         else:
             self.bits.pack(before=self.notebook, fill="x", pady=(0, 10))
             self.status.set("掩码计算模式 · 在上方输入地址与掩码，点击计算结果。")
@@ -193,17 +214,67 @@ class App:
         self.range_tree.delete(*self.range_tree.get_children())
         self.check_status.set("")
         try:
-            networks = range_rules(self.range_start.get(), self.range_end.get())
+            networks, merged = multiple_range_rules(self.condition_values())
         except ValueError as exc:
             self.range_summary.set(f"输入有误：{exc}")
             return None
         count = sum(network.num_addresses for network in networks)
-        single = "可用一条通配符精确匹配。" if len(networks) == 1 else "无法用一条通配符精确匹配，需组合以下规则。"
-        self.range_summary.set(f"共 {count:,} 个地址，分解为 {len(networks)} 条 CIDR / ACL 规则。{single}")
+        self.range_summary.set(f"{len(self.conditions.get_children())} 条条件（或） → {len(merged)} 段合并范围 → {len(networks)} 条精确 CIDR / ACL 规则，共 {count:,} 个地址（已去重）。")
         for index, network in enumerate(networks):
             self.range_tree.insert("", "end", values=(str(network), str(network.netmask), str(network.hostmask), f"{network.network_address} ～ {network.broadcast_address}", f"{network.num_addresses:,}"), tags=("even" if index % 2 == 0 else "odd",))
         self.status.set("范围反推完成 · 所有规则组合后精确覆盖输入范围，不匹配范围外的地址。")
         return networks
+
+    def condition_values(self):
+        return [tuple(self.conditions.item(item, "values")) for item in self.conditions.get_children()]
+
+    def invalidate_ranges(self):
+        for index, item in enumerate(self.conditions.get_children(), 1):
+            self.conditions.item(item, text=f"条件 {index}")
+        self.range_tree.delete(*self.range_tree.get_children())
+        self.check_status.set("")
+        self.range_summary.set(f"已有 {len(self.conditions.get_children())} 条范围条件，请点击“反推全部条件”。")
+
+    def validated_editor(self):
+        values = (self.range_start.get().strip(), self.range_end.get().strip())
+        try:
+            multiple_range_rules([values])
+        except ValueError as exc:
+            self.range_summary.set(f"输入有误：{exc}")
+            return None
+        return values
+
+    def add_condition(self):
+        values = self.validated_editor()
+        if values is not None:
+            item = self.conditions.insert("", "end", values=values, tags=("condition",))
+            self.conditions.see(item)
+            self.invalidate_ranges()
+
+    def load_condition(self, _=None):
+        selected = self.conditions.selection()
+        if len(selected) == 1:
+            start, end = self.conditions.item(selected[0], "values")
+            self.range_start.set(start)
+            self.range_end.set(end)
+
+    def update_condition(self):
+        selected = self.conditions.selection()
+        if len(selected) != 1:
+            self.range_summary.set("请先选中一条要更新的条件。")
+            return
+        values = self.validated_editor()
+        if values is not None:
+            self.conditions.item(selected[0], values=values)
+            self.invalidate_ranges()
+
+    def remove_conditions(self):
+        selected = self.conditions.selection()
+        if not selected:
+            self.range_summary.set("请先选中要删除的条件，可用 Ctrl 或 Shift 多选。")
+            return
+        self.conditions.delete(*selected)
+        self.invalidate_ranges()
 
     def draw_bits(self):
         self.bits.delete("all")
@@ -242,11 +313,13 @@ class App:
 
     def check(self):
         if self.notebook.index(self.notebook.select()) == 2:
-            if self.run_range() is None:
+            networks = self.run_range()
+            if networks is None:
                 return
             try:
-                matched = ipv4(self.range_start.get()) <= ipv4(self.candidate.get()) <= ipv4(self.range_end.get())
-                self.check_status.set(f"{self.candidate.get()}：{'匹配 ✓' if matched else '不匹配 ✕'}")
+                candidate = ipv4(self.candidate.get())
+                hits = [str(index) for index, (start, end) in enumerate(self.condition_values(), 1) if ipv4(start) <= candidate <= ipv4(end)]
+                self.check_status.set(f"{self.candidate.get()}：匹配 ✓ 条件 {', '.join(hits)}" if hits else f"{self.candidate.get()}：不匹配 ✕ 所有条件均未命中")
             except ValueError as exc:
                 self.check_status.set(str(exc))
             return
@@ -263,7 +336,9 @@ class App:
         if self.notebook.index(self.notebook.select()) == 2:
             networks = self.run_range()
             if networks is not None:
-                lines = [f"地址范围：{self.range_start.get()} ～ {self.range_end.get()}", self.range_summary.get(), "", "ACL 地址与通配符（精确匹配，全部规则需共同使用）："]
+                lines = ["地址范围条件（或，满足任意一条即匹配）："]
+                lines.extend(f"条件 {index}：{start} ～ {end}" for index, (start, end) in enumerate(self.condition_values(), 1))
+                lines.extend([self.range_summary.get(), "", "ACL 地址与通配符（精确覆盖条件并集，全部规则需共同使用）："])
                 lines.extend(f"{n.network_address} {n.hostmask}    CIDR: {n}    正掩码: {n.netmask}" for n in networks)
                 self.root.clipboard_clear()
                 self.root.clipboard_append("\n".join(lines))

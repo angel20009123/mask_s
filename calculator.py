@@ -88,3 +88,29 @@ def range_rules(start, end):
         raise ValueError("起始地址不能大于结束地址")
     return list(ipaddress.summarize_address_range(
         ipaddress.IPv4Address(first), ipaddress.IPv4Address(last)))
+
+
+def multiple_range_rules(ranges):
+    """Union of inclusive range conditions, with overlaps and adjacency merged."""
+    intervals = []
+    for index, (start, end) in enumerate(ranges, 1):
+        try:
+            first, last = ipv4(start), ipv4(end)
+            if first > last:
+                raise ValueError("起始地址不能大于结束地址")
+        except ValueError as exc:
+            raise ValueError(f"条件 {index}：{exc}") from None
+        intervals.append((first, last))
+    if not intervals:
+        raise ValueError("请至少添加一条地址范围条件")
+    merged = []
+    for first, last in sorted(intervals):
+        if merged and first <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
+        else:
+            merged.append((first, last))
+    networks = []
+    for first, last in merged:
+        networks.extend(ipaddress.summarize_address_range(
+            ipaddress.IPv4Address(first), ipaddress.IPv4Address(last)))
+    return networks, merged
