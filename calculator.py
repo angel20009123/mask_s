@@ -79,3 +79,12 @@ def subnet_page(base, mask, offset=0, limit=128):
                 network |= 1 << bit
         networks.append(ipaddress.IPv4Network((network, 32 - trailing)))
     return networks, total, trailing
+
+
+def range_rules(start, end):
+    """Exact minimal CIDR cover of an inclusive IPv4 interval (at most 62 rules)."""
+    first, last = ipv4(start), ipv4(end)
+    if first > last:
+        raise ValueError("起始地址不能大于结束地址")
+    return list(ipaddress.summarize_address_range(
+        ipaddress.IPv4Address(first), ipaddress.IPv4Address(last)))

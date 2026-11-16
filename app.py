@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 import sys
-from calculator import calculate, matches, subnet_page
+from calculator import calculate, matches, subnet_page, range_rules, ipv4
 from version import __version__
 
 
@@ -98,6 +98,8 @@ class App:
         self.next = ttk.Button(pager, text="下一页", command=lambda: self.move_page(128))
         self.next.pack(side="left", padx=8)
         ttk.Label(pager, text="精确 CIDR 分解 · 每页最多 128 个子网", style="Sub.TLabel").pack(side="right")
+        self.init_range_panel()
+        self.notebook.bind("<<NotebookTabChanged>>", self.tab_changed)
         check = ttk.Frame(frame)
         check.pack(fill="x", pady=(16, 6))
         ttk.Label(check, text="ACL 匹配检查").pack(side="left", padx=(0, 12))
@@ -110,10 +112,14 @@ class App:
         self.run()
 
     def change_mode(self, _=None):
+        self.notebook.select(0)
         self.value.set({"CIDR 前缀": "24", "正掩码": "255.255.255.0", "反掩码 / ACL 通配符": "0.0.0.255"}[self.mode.get()])
         self.run()
 
     def run(self):
+        if self.notebook.index(self.notebook.select()) == 2:
+            self.run_range()
+            return None
         try:
             result, base, mask = calculate(self.address.get(), self.value.get(), self.mode.get())
         except ValueError as exc:
@@ -140,6 +146,64 @@ class App:
         self.status.set("计算完成 · 可复制全部结果，或输入地址检查 ACL 是否匹配。")
         self.check_status.set("")
         return result, base, mask
+
+    def init_range_panel(self):
+        panel = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(panel, text="  地址范围反推  ")
+        self.range_start = tk.StringVar(value="192.168.1.10")
+        self.range_end = tk.StringVar(value="192.168.1.100")
+        ttk.Label(panel, text="输入起止地址（包含首尾），反推精确匹配的掩码与 ACL 通配符。", style="Sub.TLabel").pack(anchor="w", pady=(0, 10))
+        inputs = ttk.Frame(panel)
+        inputs.pack(fill="x")
+        for col, (label, variable) in enumerate((("起始 IPv4 地址", self.range_start), ("结束 IPv4 地址", self.range_end))):
+            inputs.columnconfigure(col, weight=1)
+            ttk.Label(inputs, text=label).grid(row=0, column=col, sticky="w", pady=(0, 6))
+            ttk.Entry(inputs, textvariable=variable, font=("Consolas", 12)).grid(row=1, column=col, sticky="ew", padx=(0, 10), ipady=5)
+        ttk.Button(inputs, text="反推通配符", style="Accent.TButton", command=self.run_range).grid(row=1, column=2)
+        self.range_summary = tk.StringVar(value="点击“反推通配符”查看精确规则。")
+        ttk.Label(panel, textvariable=self.range_summary, wraplength=850).pack(anchor="w", pady=12)
+        table = ttk.Frame(panel)
+        table.pack(fill="both", expand=True)
+        self.range_tree = ttk.Treeview(table, columns=("cidr", "mask", "wildcard", "range", "count"), show="headings", height=6)
+        for key, label, width in (("cidr", "CIDR 子网", 180), ("mask", "正掩码", 150), ("wildcard", "反掩码 / ACL 通配符", 175), ("range", "精确匹配范围（含首尾）", 335), ("count", "地址数", 90)):
+            self.range_tree.heading(key, text=label, anchor="w")
+            self.range_tree.column(key, width=width, minwidth=width, stretch=False)
+        vertical = ttk.Scrollbar(table, orient="vertical", command=self.range_tree.yview)
+        horizontal = ttk.Scrollbar(table, orient="horizontal", command=self.range_tree.xview)
+        self.range_tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        table.rowconfigure(0, weight=1)
+        table.columnconfigure(0, weight=1)
+        self.range_tree.grid(row=0, column=0, sticky="nsew")
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+        self.range_tree.tag_configure("even", background="#eef4ff", foreground="#244b86")
+        self.range_tree.tag_configure("odd", background="#e9f7f2", foreground="#18654e")
+        ttk.Label(panel, text="一行对应一条 ACL 地址与通配符规则；多行需共同使用。规则匹配包含网络地址和广播地址。", style="Sub.TLabel", wraplength=850).pack(anchor="w", pady=(10, 0))
+
+    def tab_changed(self, _=None):
+        is_range = self.notebook.index(self.notebook.select()) == 2
+        if is_range:
+            self.bits.pack_forget()
+            self.status.set("范围反推模式 · 在下方输入起始和结束地址；底部可检查地址是否落在范围内。")
+        else:
+            self.bits.pack(before=self.notebook, fill="x", pady=(0, 10))
+            self.status.set("掩码计算模式 · 在上方输入地址与掩码，点击计算结果。")
+
+    def run_range(self):
+        self.range_tree.delete(*self.range_tree.get_children())
+        self.check_status.set("")
+        try:
+            networks = range_rules(self.range_start.get(), self.range_end.get())
+        except ValueError as exc:
+            self.range_summary.set(f"输入有误：{exc}")
+            return None
+        count = sum(network.num_addresses for network in networks)
+        single = "可用一条通配符精确匹配。" if len(networks) == 1 else "无法用一条通配符精确匹配，需组合以下规则。"
+        self.range_summary.set(f"共 {count:,} 个地址，分解为 {len(networks)} 条 CIDR / ACL 规则。{single}")
+        for index, network in enumerate(networks):
+            self.range_tree.insert("", "end", values=(str(network), str(network.netmask), str(network.hostmask), f"{network.network_address} ～ {network.broadcast_address}", f"{network.num_addresses:,}"), tags=("even" if index % 2 == 0 else "odd",))
+        self.status.set("范围反推完成 · 所有规则组合后精确覆盖输入范围，不匹配范围外的地址。")
+        return networks
 
     def draw_bits(self):
         self.bits.delete("all")
@@ -177,6 +241,15 @@ class App:
         self.show_subnets()
 
     def check(self):
+        if self.notebook.index(self.notebook.select()) == 2:
+            if self.run_range() is None:
+                return
+            try:
+                matched = ipv4(self.range_start.get()) <= ipv4(self.candidate.get()) <= ipv4(self.range_end.get())
+                self.check_status.set(f"{self.candidate.get()}：{'匹配 ✓' if matched else '不匹配 ✕'}")
+            except ValueError as exc:
+                self.check_status.set(str(exc))
+            return
         data = self.run()
         if data is None:
             return
@@ -187,6 +260,15 @@ class App:
             self.check_status.set(str(exc))
 
     def copy(self):
+        if self.notebook.index(self.notebook.select()) == 2:
+            networks = self.run_range()
+            if networks is not None:
+                lines = [f"地址范围：{self.range_start.get()} ～ {self.range_end.get()}", self.range_summary.get(), "", "ACL 地址与通配符（精确匹配，全部规则需共同使用）："]
+                lines.extend(f"{n.network_address} {n.hostmask}    CIDR: {n}    正掩码: {n.netmask}" for n in networks)
+                self.root.clipboard_clear()
+                self.root.clipboard_append("\n".join(lines))
+                self.status.set("已复制范围及全部 ACL 通配符规则。")
+            return
         data = self.run()
         if data is not None:
             self.root.clipboard_clear()
@@ -196,6 +278,7 @@ class App:
             self.status.set("已复制全部计算结果。")
 
     def example(self):
+        self.notebook.select(1)
         self.address.set("192.168.0.0")
         self.mode.set("反掩码 / ACL 通配符")
         self.value.set("0.0.5.255")

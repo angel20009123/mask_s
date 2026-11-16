@@ -1,8 +1,30 @@
 import unittest
-from calculator import calculate, matches, subnet_page
+from calculator import calculate, matches, subnet_page, range_rules
 
 
 class CalculatorTests(unittest.TestCase):
+    def test_aligned_range(self):
+        rules = range_rules("192.168.1.0", "192.168.1.255")
+        self.assertEqual([str(n) for n in rules], ["192.168.1.0/24"])
+        self.assertEqual(str(rules[0].hostmask), "0.0.0.255")
+
+    def test_unaligned_range_exact_coverage(self):
+        rules = range_rules("192.168.1.10", "192.168.1.100")
+        self.assertGreater(len(rules), 1)
+        self.assertEqual(sum(n.num_addresses for n in rules), 91)
+        covered = {int(ip) for n in rules for ip in n}
+        self.assertEqual(covered, set(range(0xC0A8010A, 0xC0A80165)))
+
+    def test_range_boundaries(self):
+        for start, end, expected in (("0.0.0.0", "255.255.255.255", ["0.0.0.0/0"]), ("255.255.255.255", "255.255.255.255", ["255.255.255.255/32"]), ("192.168.1.255", "192.168.2.0", ["192.168.1.255/32", "192.168.2.0/32"])):
+            with self.subTest(start=start):
+                self.assertEqual([str(n) for n in range_rules(start, end)], expected)
+
+    def test_invalid_ranges(self):
+        for start, end in (("10.0.0.2", "10.0.0.1"), ("bad", "10.0.0.1"), ("10.0.0.1", "256.0.0.1")):
+            with self.subTest(start=start), self.assertRaises(ValueError):
+                range_rules(start, end)
+
     def test_exact_subnet_decomposition(self):
         _, base, mask = calculate("192.168.0.0", "0.0.5.255", "反掩码 / ACL 通配符")
         networks, total, trailing = subnet_page(base, mask)
