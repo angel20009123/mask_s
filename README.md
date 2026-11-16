@@ -1,10 +1,12 @@
 # Mask Studio
 
+当前版本：**v1.0.0**。更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 中文 IPv4 掩码与 ACL 桌面计算器，使用 Python 标准库 Tkinter，无第三方依赖。
 
 ## 启动
 
-推荐直接双击 `dist/MaskStudio.exe`，无需安装 Python。
+从 GitHub Releases 下载 `MaskStudio-v1.0.0.exe`，或双击本地 `dist/MaskStudio-v1.0.0.exe`，无需安装 Python。
 
 运行源码：Windows 安装包含 Tkinter 的 Python 3.10 或更高版本后，双击 `启动客户端.bat`，或运行 `python app.py`。
 
@@ -24,7 +26,13 @@
 
 运行 `python -m unittest -v`。
 
-重新打包：`python -m PyInstaller --noconfirm --onefile --windowed --name MaskStudio --icon assets/mask-studio.ico --add-data "assets;assets" app.py`（需安装 PyInstaller）。
+重新打包：`python build.py`（需安装 PyInstaller）。版本号统一读取 `version.py`，同时写入 EXE 文件名及 Windows 文件属性。
+
+## 版本管理
+
+采用 `主版本.次版本.修订版本`：修复问题增加修订版本（如 `1.0.1`），新增功能增加次版本（如 `1.1.0`），不兼容改动增加主版本。后续更新需修改 `version.py`、本说明中的当前版本及下载文件名，并在 `CHANGELOG.md` 中记录变化。
+
+提交代码后，为发布提交创建同名标签（如 `v1.0.0`）并推送到 GitHub。工作流会校验标签、运行计算测试、打包并创建带 EXE 附件的 Release。源码仓库不保存构建中间文件及 EXE。
 
 图标源文件生成脚本为 `create_assets.py`（重新生成需要 Pillow），PNG 与 Windows 多尺寸 ICO 位于 `assets/`。
 

@@ -4,6 +4,7 @@ from tkinter import ttk
 from pathlib import Path
 import sys
 from calculator import calculate, matches, subnet_page
+from version import __version__
 
 
 class App:
@@ -14,7 +15,7 @@ class App:
         assets = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "assets"
         if (assets / "mask-studio.ico").exists():
             root.iconbitmap(str(assets / "mask-studio.ico"))
-        root.title("Mask Studio · IPv4 掩码与 ACL 计算器")
+        root.title(f"Mask Studio v{__version__} · IPv4 掩码与 ACL 计算器")
         root.geometry("1040x940")
         root.minsize(940, 820)
         root.configure(bg="#eef2f7")
